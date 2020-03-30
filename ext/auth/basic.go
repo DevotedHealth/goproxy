@@ -30,7 +30,7 @@ func BasicUnauthorized(req *http.Request, realm string) *http.Response {
 
 var proxyAuthorizationHeader = "Proxy-Authorization"
 
-func auth(req *http.Request, f func(user, passwd string) bool) bool {
+func HandleBasicAuthReq(req *http.Request, f func(user, passwd string) bool) bool {
 	authheader := strings.SplitN(req.Header.Get(proxyAuthorizationHeader), " ", 2)
 	req.Header.Del(proxyAuthorizationHeader)
 	if len(authheader) != 2 || authheader[0] != "Basic" {
@@ -52,7 +52,7 @@ func auth(req *http.Request, f func(user, passwd string) bool) bool {
 // You probably want to use auth.ProxyBasic(proxy) to enable authentication for all proxy activities
 func Basic(realm string, f func(user, passwd string) bool) goproxy.ReqHandler {
 	return goproxy.FuncReqHandler(func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-		if !auth(req, f) {
+		if !HandleBasicAuthReq(req, f) {
 			return nil, BasicUnauthorized(req, realm)
 		}
 		return req, nil
@@ -64,11 +64,11 @@ func Basic(realm string, f func(user, passwd string) bool) goproxy.ReqHandler {
 // You probably want to use auth.ProxyBasic(proxy) to enable authentication for all proxy activities
 func BasicConnect(realm string, f func(user, passwd string) bool) goproxy.HttpsHandler {
 	return goproxy.FuncHttpsHandler(func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
-		if !auth(ctx.Req, f) {
+		if !HandleBasicAuthReq(ctx.Req, f) {
 			ctx.Resp = BasicUnauthorized(ctx.Req, realm)
 			return goproxy.RejectConnect, host
 		}
-		return goproxy.OkConnect, host
+		return nil, host
 	})
 }
 
