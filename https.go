@@ -215,6 +215,9 @@ func (proxy *ProxyHttpServer) handleHttps(w http.ResponseWriter, r *http.Request
 				// information URL in the context when does HTTPS MITM
 				ctx.Req = req
 
+				ctx.Logf("Got inner request %v %v %v %v",
+					req.URL.Path, req.Host, req.Method, req.URL.String())
+
 				req, resp := proxy.filterRequest(req, ctx)
 				if resp == nil {
 					if isWebSocketRequest(req) {
