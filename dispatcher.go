@@ -192,6 +192,11 @@ func (pcond *ReqProxyConds) DoFunc(f func(req *http.Request, ctx *ProxyCtx) (*ht
 func (pcond *ReqProxyConds) Do(h ReqHandler) {
 	pcond.proxy.reqHandlers = append(pcond.proxy.reqHandlers,
 		FuncReqHandler(func(r *http.Request, ctx *ProxyCtx) (*http.Request, *http.Response) {
+			defer func() {
+				if r := recover(); r != nil {
+					pcond.proxy.Logger.Printf("ERROR processing a request: %+v", r)
+				}
+			}()
 			for _, cond := range pcond.reqConds {
 				if !cond.HandleReq(r, ctx) {
 					return r, nil
@@ -271,6 +276,11 @@ func (pcond *ProxyConds) DoFunc(f func(resp *http.Response, ctx *ProxyCtx) *http
 func (pcond *ProxyConds) Do(h RespHandler) {
 	pcond.proxy.respHandlers = append(pcond.proxy.respHandlers,
 		FuncRespHandler(func(resp *http.Response, ctx *ProxyCtx) *http.Response {
+			defer func() {
+				if r := recover(); r != nil {
+					pcond.proxy.Logger.Printf("ERROR while processing a response: %+v", r)
+				}
+			}()
 			for _, cond := range pcond.reqConds {
 				if !cond.HandleReq(ctx.Req, ctx) {
 					return resp
