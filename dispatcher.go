@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"runtime/debug"
 	"strings"
 )
 
@@ -194,7 +195,7 @@ func (pcond *ReqProxyConds) Do(h ReqHandler) {
 		FuncReqHandler(func(r *http.Request, ctx *ProxyCtx) (*http.Request, *http.Response) {
 			defer func() {
 				if r := recover(); r != nil {
-					pcond.proxy.Logger.Printf("ERROR processing a request: %+v", r)
+					pcond.proxy.Logger.Printf("ERROR: panic while processing a request: %+v\n%s", r, debug.Stack())
 				}
 			}()
 			for _, cond := range pcond.reqConds {
@@ -278,7 +279,7 @@ func (pcond *ProxyConds) Do(h RespHandler) {
 		FuncRespHandler(func(resp *http.Response, ctx *ProxyCtx) *http.Response {
 			defer func() {
 				if r := recover(); r != nil {
-					pcond.proxy.Logger.Printf("ERROR while processing a response: %+v", r)
+					pcond.proxy.Logger.Printf("ERROR: panic while processing a response: %+v\n%s", r, debug.Stack())
 				}
 			}()
 			for _, cond := range pcond.reqConds {
