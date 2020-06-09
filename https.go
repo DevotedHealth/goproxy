@@ -86,7 +86,11 @@ func (proxy *ProxyHttpServer) handleHttps(w http.ResponseWriter, r *http.Request
 	}
 
 	ctx.Logf("Running %d CONNECT handlers", len(proxy.httpsHandlers))
-	todo, host := OkConnect, r.URL.Host
+	todo, host := proxy.DefaultConnectAction, r.URL.Host
+	if proxy.DefaultConnectAction.Action == ConnectReject {
+		// Set a default response in case we fall through to ConnectReject.
+		ctx.Resp = NewResponse(ctx.Req, ContentTypeText, http.StatusForbidden, "Proxy Request Forbidden")
+	}
 	for i, h := range proxy.httpsHandlers {
 		newtodo, newhost := h.HandleConnect(host, ctx)
 
@@ -151,6 +155,18 @@ func (proxy *ProxyHttpServer) handleHttps(w http.ResponseWriter, r *http.Request
 				return
 			}
 			req, resp := proxy.filterRequest(req, ctx)
+			if resp == Unhandled && proxy.DefaultDenyRequest {
+				ctx.Warnf("Request denied by default in ConnectHTTPMitm")
+				resp = NewResponse(ctx.Req, ContentTypeText, http.StatusForbidden, "Proxy Request Forbidden")
+				resp.Proto = req.Proto
+				resp.ProtoMajor = req.ProtoMajor
+				resp.ProtoMinor = req.ProtoMinor
+
+				if err := resp.Write(proxyClient); err != nil {
+					httpError(proxyClient, ctx, err)
+				}
+				return
+			}
 			if resp == nil {
 				if err := req.Write(targetSiteCon); err != nil {
 					httpError(proxyClient, ctx, err)
@@ -219,6 +235,14 @@ func (proxy *ProxyHttpServer) handleHttps(w http.ResponseWriter, r *http.Request
 					req.URL.Path, req.Host, req.Method, req.URL.String())
 
 				req, resp := proxy.filterRequest(req, ctx)
+				if resp == Unhandled {
+					if proxy.DefaultDenyRequest {
+						ctx.Warnf("Request denied by default in ConnectMitm")
+						resp = NewResponse(ctx.Req, ContentTypeText, http.StatusForbidden, "Proxy Request Forbidden")
+					} else {
+						resp = nil
+					}
+				}
 				if resp == nil {
 					if isWebSocketRequest(req) {
 						ctx.Logf("Request looks like websocket upgrade.")
@@ -284,6 +308,7 @@ func (proxy *ProxyHttpServer) handleHttps(w http.ResponseWriter, r *http.Request
 		proxyClient.Write([]byte("HTTP/1.1 407 Proxy Authentication Required\r\n"))
 		todo.Hijack(r, proxyClient, ctx)
 	case ConnectReject:
+		ctx.Warnf("Rejecting CONNECT request")
 		if ctx.Resp != nil {
 			if err := ctx.Resp.Write(proxyClient); err != nil {
 				ctx.Warnf("Cannot write response that reject http CONNECT: %v", err)

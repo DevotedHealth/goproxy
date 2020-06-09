@@ -183,6 +183,10 @@ func (pcond *ReqProxyConds) DoFunc(f func(req *http.Request, ctx *ProxyCtx) (*ht
 	pcond.Do(FuncReqHandler(f))
 }
 
+// Unhandled is a sentinel that lets a request handler explicitly indicate it's not handling the request,
+// letting ProxyHttpServer.DefaultDenyRequest make the final ruling.
+var Unhandled = &http.Response{}
+
 // ReqProxyConds.Do will register the ReqHandler on the proxy,
 // the ReqHandler will handle the HTTP request if all the conditions
 // aggregated in the ReqProxyConds are met. Typical usage:
@@ -200,7 +204,7 @@ func (pcond *ReqProxyConds) Do(h ReqHandler) {
 			}()
 			for _, cond := range pcond.reqConds {
 				if !cond.HandleReq(r, ctx) {
-					return r, nil
+					return r, Unhandled
 				}
 			}
 			return h.Handle(r, ctx)

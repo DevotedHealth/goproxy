@@ -19,13 +19,15 @@ type ProxyHttpServer struct {
 	// KeepDestinationHeaders indicates the proxy should retain any headers present in the http.Response before proxying
 	KeepDestinationHeaders bool
 	// setting Verbose to true will log information on each request sent to the proxy
-	Verbose         bool
-	Logger          Logger
-	NonproxyHandler http.Handler
-	reqHandlers     []ReqHandler
-	respHandlers    []RespHandler
-	httpsHandlers   []HttpsHandler
-	Tr              *http.Transport
+	Verbose              bool
+	Logger               Logger
+	NonproxyHandler      http.Handler
+	reqHandlers          []ReqHandler
+	respHandlers         []RespHandler
+	httpsHandlers        []HttpsHandler
+	DefaultDenyRequest   bool
+	DefaultConnectAction *ConnectAction
+	Tr                   *http.Transport
 	// ConnectDial will be used to create TCP connections for CONNECT requests
 	// if nil Tr.Dial will be used
 	ConnectDial func(network string, addr string) (net.Conn, error)
@@ -57,13 +59,25 @@ func isEof(r *bufio.Reader) bool {
 
 func (proxy *ProxyHttpServer) filterRequest(r *http.Request, ctx *ProxyCtx) (req *http.Request, resp *http.Response) {
 	req = r
+	sawNilResp := false
 	for _, h := range proxy.reqHandlers {
 		req, resp = h.Handle(r, ctx)
+
+		// If we see a nil response, a handler got called and returned it.
+		// If we don't honor it, we won't end up proxying the request to
+		// retrieve the response.
+		if resp == nil {
+			sawNilResp = true
+		}
 		// non-nil resp means the handler decided to skip sending the request
 		// and return canned response instead.
-		if resp != nil {
-			break
+		if resp != nil && resp != Unhandled {
+			return
 		}
+	}
+
+	if sawNilResp {
+		resp = nil
 	}
 	return
 }
@@ -111,7 +125,11 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		r, resp := proxy.filterRequest(r, ctx)
-
+		if resp == Unhandled && proxy.DefaultDenyRequest {
+			ctx.Warnf("Request denied by default in ServeHTTP")
+			http.Error(w, "Proxy Request Forbidden", http.StatusForbidden)
+			return
+		}
 		if resp == nil {
 			if isWebSocketRequest(r) {
 				ctx.Logf("Request looks like websocket upgrade.")
@@ -169,10 +187,12 @@ func (proxy *ProxyHttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 // NewProxyHttpServer creates and returns a proxy server, logging to stderr by default
 func NewProxyHttpServer() *ProxyHttpServer {
 	proxy := ProxyHttpServer{
-		Logger:        log.New(os.Stderr, "", log.LstdFlags),
-		reqHandlers:   []ReqHandler{},
-		respHandlers:  []RespHandler{},
-		httpsHandlers: []HttpsHandler{},
+		Logger:               log.New(os.Stderr, "", log.LstdFlags),
+		reqHandlers:          []ReqHandler{},
+		respHandlers:         []RespHandler{},
+		httpsHandlers:        []HttpsHandler{},
+		DefaultDenyRequest:   false,
+		DefaultConnectAction: OkConnect,
 		NonproxyHandler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "This is a proxy server. Does not respond to non-proxy requests.", 500)
 		}),
