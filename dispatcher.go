@@ -137,10 +137,27 @@ func SrcIpIs(ips ...string) ReqCondition {
 	})
 }
 
-// Not returns a ReqCondition negating the given ReqCondition
-func Not(r ReqCondition) ReqConditionFunc {
+// Not returns a ReqCondition negating the given ReqConditions
+func Not(r ...ReqCondition) ReqConditionFunc {
 	return func(req *http.Request, ctx *ProxyCtx) bool {
-		return !r.HandleReq(req, ctx)
+		for _, reqCond := range r {
+			if !reqCond.HandleReq(req, ctx) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// Or returns a ReqCondition inclusive ORing the given ReqConditions
+func Or(r ...ReqCondition) ReqConditionFunc {
+	return func(req *http.Request, ctx *ProxyCtx) bool {
+		for _, reqCond := range r {
+			if reqCond.HandleReq(req, ctx) {
+				return true
+			}
+		}
+		return false
 	}
 }
 
